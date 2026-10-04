@@ -68,6 +68,18 @@ nav button[aria-current="true"]{color:var(--ink);border-top-color:var(--sun)}
 @keyframes fall{to{transform:translateY(120px)}}
 @keyframes pulse{from{transform:scale(.6);opacity:.4}to{transform:scale(1.8);opacity:0}}
 @media (prefers-reduced-motion: reduce){.wave,.steam,.flame,.bounce,.fall,#meHalo{animation:none}}
+.game{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;width:100%}
+.game span{font-family:var(--body);font-weight:400;font-size:.9rem;color:var(--soft)}
+.big{font-family:var(--display);font-size:2.6rem;line-height:1.1;text-align:center;letter-spacing:.08em;color:var(--brick)}
+.mem{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mem button{min-height:68px;font-family:var(--body);font-size:.85rem;padding:6px;overflow-wrap:anywhere}
+.mem button.up{background:var(--sun);color:var(--on-sun);border-color:var(--on-sun)}
+.mem button.got{border-color:var(--ok);color:var(--ok)}
+.bar{position:relative;height:28px;margin-block:8px;border:2px solid var(--ink);border-radius:14px;background:linear-gradient(90deg,#3F87C6,#F5B700,#B3261E)}
+.zone{position:absolute;left:60%;width:18%;top:-2px;bottom:-2px;background:#1F8A4C;border:3px solid var(--ink)}
+.pin{position:absolute;left:40%;top:-8px;width:6px;height:40px;margin-left:-3px;background:var(--ink);border:1px solid var(--card);border-radius:3px}
+button:disabled{opacity:.75;cursor:default}
+nav button{padding-inline:4px;font-size:1rem}
 </style>
 
 <main><div class="wrap">
@@ -81,11 +93,13 @@ nav button[aria-current="true"]{color:var(--ink);border-top-color:var(--sun)}
       <p class="small">Il pallino azzurro sei tu. La pianta è semplificata e le posizioni sono indicative: usala per capire in che sala sei, non per misurare.</p>
     </div>
   </section>
+  <section id="vGiochi" hidden></section>
   <section id="vAlbum" hidden></section>
 </div></main>
 <nav>
   <button id="tGiro" aria-current="true">Giro</button>
   <button id="tMappa">Mappa</button>
+  <button id="tGiochi">Sfide</button>
   <button id="tAlbum">Album</button>
 </nav>
 
@@ -127,8 +141,9 @@ const STOPS=[
 ];
 
 /* ---------- stato ---------- */
-let st={cur:0,done:[]};
+let st={cur:0,done:[],med:[]};
 try{const s=JSON.parse(localStorage.getItem("caracalla")||"null");if(s&&Array.isArray(s.done))st=s}catch(e){}
+if(!Array.isArray(st.med))st.med=[];
 const save=()=>{try{localStorage.setItem("caracalla",JSON.stringify(st))}catch(e){}};
 const $=id=>document.getElementById(id);
 const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
@@ -167,6 +182,7 @@ function sound(k){
     if(k==="drip")[0,.6,1.3,1.7].forEach(t=>tone(900,t,.18,"sine",.3,1700));
     if(k==="bubbles")for(let i=0;i<14;i++)tone(300+Math.random()*500,i*.13,.1,"sine",.2,900);
     if(k==="fire"){noise(0,2.5,700,.25);for(let i=0;i<20;i++)noise(Math.random()*2.4,.03,4000,.4,"highpass")}
+    if(k==="log")noise(0,.15,1200,.4);
     if(k==="cart"){noise(0,2.5,200,.5);for(let i=0;i<8;i++)tone(90,i*.3,.08,"square",.08)}
   }catch(e){}
 }
@@ -217,8 +233,9 @@ function renderAlbum(){
     <p>Hai ${st.done.length} figurine su 8. Rispondi alle domande per vincerle tutte.</p>
     <div class="album">${STOPS.map((s,i)=>`<div class="stk ${st.done.includes(i)?"got":""}">${R[i]}<span>${esc(s.short)}</span></div>`).join("")}</div>
     ${all?`<div class="box diploma"><p class="eyebrow">Diploma</p><h2>Piccolo Romano delle Terme</h2><p>Hai esplorato tutte le sale delle Terme di Caracalla. L'imperatore sarebbe fiero di te!</p></div>`:""}
+    <div class="box"><h2>Medaglie delle sfide</h2><p>${st.med.length} su 5${st.med.length?": "+GAMES.filter(g=>st.med.includes(g[0])).map(g=>g[1]).join(", "):". Le trovi nella scheda Sfide."}</p></div>
     <div class="row"><button id="reset">Ricomincia da capo</button></div></div>`;
-  $("reset").onclick=()=>{st={cur:0,done:[]};save();renderStop();drawMap();renderAlbum()};
+  $("reset").onclick=()=>{st={cur:0,done:[],med:[]};save();renderStop();drawMap();renderAlbum()};
 }
 
 /* ---------- mappa e GPS ---------- */
@@ -258,14 +275,95 @@ $("gpsBtn").onclick=()=>{
   catch(e){gpsOff("Il GPS non è disponibile qui. Tocca le tappe sulla mappa per orientarti.")}
 };
 
+/* ---------- giochi per i più grandi ---------- */
+let gTimer=null;
+const GAMES=[["rom","Numeri romani","Decifra i numeri come un vero scriba."],["ord","Il percorso del bagnante","Metti le sale nell'ordine giusto."],["forni","Il capo dei forni","Tieni il caldarium alla temperatura giusta."],["mem","Memory latino","Trova le coppie tra latino e italiano."],["quiz","Super quiz","Otto domande per veri esperti."]];
+const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+function medal(id,txt){if(!st.med.includes(id)){st.med.push(id);save()}sound("gong");$("gmsg").textContent=txt}
+function gShell(title,body){clearInterval(gTimer);$("vGiochi").innerHTML=`<div class="wrap"><p class="eyebrow">Sfida per esperti</p><h1>${title}</h1>${body}<p class="msg" id="gmsg"></p><div class="row"><button id="gback">Tutti i giochi</button></div></div>`;$("gback").onclick=renderGames;document.querySelector("main").scrollTop=0}
+function renderGames(){clearInterval(gTimer);
+  $("vGiochi").innerHTML=`<div class="wrap"><h1>Sfide per esperti</h1><p>Cinque giochi più difficili, per chi ha almeno 10 anni. Ogni sfida superata vale una medaglia.</p>${GAMES.map(g=>`<button class="game" data-g="${g[0]}"><b>${g[1]}${st.med.includes(g[0])?" · medaglia vinta":""}</b><span>${g[2]}</span></button>`).join("")}</div>`;
+  $("vGiochi").querySelectorAll(".game").forEach(b=>b.onclick=()=>PLAY[b.dataset.g]());
+}
+function askRounds(title,rounds,need,id,winTxt){
+  let k=0,ok=0;
+  const step=()=>{
+    if(k===rounds.length){gShell(title,`<p>Risposte giuste: ${ok} su ${rounds.length}.</p><div class="row"><button class="main" id="again">Gioca ancora</button></div>`);$("again").onclick=()=>PLAY[id]();
+      if(ok>=need)medal(id,winTxt);else $("gmsg").textContent="Servono almeno "+need+" risposte giuste. Riprova!";return}
+    const r=rounds[k];
+    gShell(title,`<p class="small">Domanda ${k+1} di ${rounds.length}</p>${r.html}<div class="opts">${r.o.map((o,j)=>`<button data-j="${j}">${esc(String(o))}</button>`).join("")}</div>`);
+    const bs=[...$("vGiochi").querySelectorAll(".opts button")];
+    bs.forEach(b=>b.onclick=()=>{bs.forEach(x=>x.disabled=true);const good=+b.dataset.j===r.a;bs[r.a].className="right";if(good)ok++;else b.className="wrong";
+      $("gmsg").textContent=(good?"Giusto! ":"Non proprio. ")+(r.why||"");k++;
+      const n=document.createElement("button");n.className="main";n.textContent=k===rounds.length?"Vedi il risultato":"Avanti";n.onclick=step;$("gback").before(n)});
+  };step();
+}
+const PLAY={
+  rom(){
+    const Q=shuffle([[216,"CCXVI","l'anno in cui aprirono le Terme"],[537,"DXXXVII","l'anno in cui si fermarono"],[1600,"MDC","i bagnanti che entravano insieme"],[50,"L","i metri di lunghezza della natatio"],[35,"XXXV","i metri della cupola del caldarium"],[2026,"MMXXVI","un anno dei nostri giorni"]]);
+    askRounds("Numeri romani",Q.map(([n,r,h])=>{const o=shuffle([n,n+10,n>150?n-100:n+100,Math.max(1,n-4)]);return{html:`<p>Questo numero indica ${h}. Quanto vale?</p><p class="big">${r}</p><p class="small">I = 1, V = 5, X = 10, L = 50, C = 100, D = 500, M = 1000</p>`,o,a:o.indexOf(n),why:r+" = "+n+"."}}),5,"rom","Medaglia dello scriba conquistata!");
+  },
+  ord(){
+    const order=["Spogliatoio","Palestra","Caldarium","Tepidarium","Frigidarium","Natatio"];let pos=0;
+    gShell("Il percorso del bagnante",`<p>Tocca le sale nell'ordine in cui le visitava un romano. Un indizio: prima ci si cambia, poi si fa sport, poi si passa dal più caldo al più freddo e si finisce all'aperto.</p><div class="opts">${shuffle(order).map(o=>`<button data-o="${o}">${o}</button>`).join("")}</div>`);
+    const bs=[...$("vGiochi").querySelectorAll(".opts button")];
+    bs.forEach(b=>b.onclick=()=>{
+      if(b.dataset.o===order[pos]){pos++;b.disabled=true;b.className="right";b.textContent=pos+". "+b.dataset.o;$("gmsg").textContent="Bene, continua!";
+        if(pos===6)medal("ord","Percorso perfetto! Medaglia del bagnante conquistata!")}
+      else{pos=0;bs.forEach(x=>{x.disabled=false;x.className="";x.textContent=x.dataset.o});$("gmsg").textContent="Ordine sbagliato: si ricomincia dalla prima sala."}
+    });
+  },
+  forni(){
+    let t=40,good=0;
+    gShell("Il capo dei forni",`<p>La temperatura scende da sola. Aggiungi legna per tenere la lancetta nella zona verde per 15 secondi. Se esageri, i bagnanti scappano e si riparte da zero!</p><div class="bar"><div class="zone"></div><div class="pin" id="pin"></div></div><p class="msg" id="gsec">0 secondi su 15</p><div class="row"><button class="main" id="wood">Aggiungi legna</button></div>`);
+    $("wood").onclick=()=>{t=Math.min(100,t+8);sound("log")};
+    gTimer=setInterval(()=>{
+      if(!$("pin"))return clearInterval(gTimer);
+      t=Math.max(0,t-.9);$("pin").style.left=t+"%";
+      if(t>=60&&t<=78){good+=.1;$("gmsg").textContent="Temperatura perfetta!"}
+      else if(t>92){good=0;$("gmsg").textContent="Troppo caldo! I bagnanti sono scappati."}
+      else $("gmsg").textContent=t<60?"Troppo freddo: serve legna.":"Attento, sta scaldando troppo.";
+      $("gsec").textContent=Math.floor(good)+" secondi su 15";
+      if(good>=15){clearInterval(gTimer);$("wood").disabled=true;medal("forni","Bagno perfetto! Medaglia del capo dei forni conquistata!")}
+    },100);
+  },
+  mem(){
+    const P=[["Frigidarium","Sala fredda"],["Caldarium","Sala calda"],["Tepidarium","Sala tiepida"],["Natatio","Piscina"],["Apodyterium","Spogliatoio"],["Strigile","Raschietto per la pelle"]];
+    const cards=shuffle(P.flatMap((p,i)=>[{p:i,t:p[0]},{p:i,t:p[1]}]));let open=[],found=0,moves=0,lock=false;
+    gShell("Memory latino",`<p>Gira due carte alla volta: abbina ogni parola latina al suo significato.</p><div class="mem">${cards.map((c,k)=>`<button data-k="${k}" aria-label="Carta coperta">?</button>`).join("")}</div>`);
+    const bs=[...$("vGiochi").querySelectorAll(".mem button")];
+    bs.forEach(b=>b.onclick=()=>{
+      const k=+b.dataset.k;if(lock||open.includes(k)||b.classList.contains("got"))return;
+      b.textContent=cards[k].t;b.className="up";b.setAttribute("aria-label",cards[k].t);open.push(k);
+      if(open.length<2)return;moves++;const [a,c]=open;
+      if(cards[a].p===cards[c].p){bs[a].className=bs[c].className="got";open=[];found++;$("gmsg").textContent="Coppia trovata!";
+        if(found===6)medal("mem","Tutte le coppie in "+moves+" mosse! Medaglia del latinista conquistata!")}
+      else{lock=true;setTimeout(()=>{[a,c].forEach(i=>{bs[i].textContent="?";bs[i].className="";bs[i].setAttribute("aria-label","Carta coperta")});open=[];lock=false},1000)}
+    });
+  },
+  quiz(){
+    const Q=[
+      ["Caracalla era un soprannome. Da dove veniva?",["Da un mantello con cappuccio che l'imperatore amava indossare","Dal nome del suo cavallo","Da una città conquistata"],0,"La caracalla era un mantello di origine gallica. Il vero nome dell'imperatore era Marco Aurelio Antonino."],
+      ["Le Terme aprirono nel 216 dopo Cristo. In quale secolo siamo?",["Secondo secolo","Terzo secolo","Quarto secolo"],1,"Gli anni dal 201 al 300 formano il terzo secolo."],
+      ["Le Terme funzionarono dal 216 al 537. Per quanti anni?",["221","321","421"],1,"537 meno 216 fa 321 anni."],
+      ["La parola ipocausto viene dal greco. Che cosa significa?",["Acqua che scorre","Fuoco sotto","Sala rotonda"],1,"Il calore dei forni passava sotto il pavimento."],
+      ["Perché il caldarium aveva grandi finestre rivolte a sud-ovest?",["Per far uscire il vapore","Per guardare il Colosseo","Per prendere il sole del pomeriggio"],2,"Il sole aiutava i forni a scaldare la sala proprio nelle ore in cui c'era più gente."],
+      ["L'acqua delle Terme arrivava da un ramo di un famoso acquedotto. Quale?",["Aqua Marcia","Aqua Dolce","Aqua Tiberina"],0,"Il ramo costruito apposta si chiamava Aqua Antoniniana."],
+      ["Nel 537 gli acquedotti furono tagliati durante un assedio. Da chi?",["Dai Goti","Dai Cartaginesi","Dagli Etruschi"],0,"I Goti del re Vitige assediavano Roma e tagliarono l'acqua alla città."],
+      ["Qui furono ritrovate due statue famosissime, il Toro Farnese e l'Ercole Farnese. Dove sono oggi?",["A Parigi, al Louvre","A Napoli, al Museo Archeologico","A Londra, al British Museum"],1,"Fanno parte della collezione Farnese, portata a Napoli nel Settecento."]];
+    askRounds("Super quiz",Q.map(q=>({html:`<p><b>${esc(q[0])}</b></p>`,o:q[1],a:q[2],why:q[3]})),6,"quiz","Medaglia del grande esperto conquistata!");
+  }
+};
+
 /* ---------- schede ---------- */
 function show(v){
   stopVoice();
-  ["Giro","Mappa","Album"].forEach(n=>{$("v"+n).hidden=n!==v;$("t"+n).setAttribute("aria-current",n===v)});
-  if(v==="Album")renderAlbum();
+  clearInterval(gTimer);
+  ["Giro","Mappa","Giochi","Album"].forEach(n=>{$("v"+n).hidden=n!==v;$("t"+n).setAttribute("aria-current",n===v)});
+  if(v==="Album")renderAlbum();if(v==="Giochi")renderGames();
   document.querySelector("main").scrollTop=0;
 }
-["Giro","Mappa","Album"].forEach(n=>$("t"+n).onclick=()=>show(n));
+["Giro","Mappa","Giochi","Album"].forEach(n=>$("t"+n).onclick=()=>show(n));
 renderStop();drawMap();
 </script>
 </body></html>
