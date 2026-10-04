@@ -253,6 +253,7 @@ function renderAlbum(){
     <div class="album">${STOPS.map((s,i)=>`<div class="stk ${st.done.includes(i)?"got":""}">${R[i]}<span>${esc(s.short)}</span></div>`).join("")}</div>
     ${all?`<div class="box diploma"><p class="eyebrow">Diploma</p><h2>Piccolo Custode della Pace</h2><p>Hai scoperto tutti i segreti dell'Ara Pacis. Augusto sarebbe fiero di te!</p></div>`:""}
     <div class="box"><h2>Medaglie delle sfide</h2><p>${st.med.length} su 5${st.med.length?": "+GAMES.filter(g=>st.med.includes(g[0])).map(g=>g[1]).join(", "):". Le trovi nella scheda Sfide."}</p></div>
+    <p><a href="./" style="color:inherit;font-weight:700">Torna a tutti i tour di Roma</a></p>
     <div class="row"><button id="reset">Ricomincia da capo</button></div></div>`;
   $("reset").onclick=()=>{st={cur:0,done:[],med:[]};save();renderStop();drawMap();renderAlbum()};
 }
