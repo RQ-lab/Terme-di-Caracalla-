@@ -77,7 +77,7 @@ nav button[aria-current="true"]{color:var(--ink);border-top-color:var(--sun)}
 .rng input{flex:1;min-width:0;height:36px;accent-color:var(--brick)}
 .hot{cursor:pointer}
 .hot circle{fill:#E8B21E;stroke:#2B2100;stroke-width:2}
-.hot.seen circle{fill:#FFFFFF}
+.hot.seen circle{fill:#FFFFFF;fill-opacity:.6}
 .hot text{font-family:var(--display);font-size:12px;font-weight:800;text-anchor:middle;fill:#2B2100;pointer-events:none}
 .pal{display:flex;gap:8px;flex-wrap:wrap}
 .pal button{width:44px;height:44px;min-height:0;padding:0;border-radius:50%}
@@ -160,6 +160,7 @@ function sound(k){
   }catch(e){}
 }
 
+const PHOTOS={};
 /* ---------- illustrazioni ---------- */
 function scene(k){
   const arches=(wall,sky)=>`<rect width="320" height="180" fill="${wall}"/>`+[30,125,220].map(x=>`<path d="M${x} 130V70a35 35 0 0 1 70 0v60z" fill="${sky}"/>`).join("");
@@ -310,9 +311,11 @@ function renderViz(v,el){
     el.innerHTML=`<div class="cmp"><svg viewBox="0 0 320 180" aria-hidden="true">${val(v.a)}</svg><svg viewBox="0 0 320 180" aria-hidden="true">${val(v.b)}</svg></div><label class="rng"><span>${v.la}</span><input type="range" id="vizR" min="0" max="100" value="0" aria-label="Scorri per confrontare"><span>${v.lb}</span></label><p class="small">${v.d}</p>`;
     const top=el.querySelectorAll(".cmp svg")[1],r=el.querySelector("#vizR");const up=()=>{top.style.clipPath=`inset(0 ${100-r.value}% 0 0)`};r.oninput=up;up();
   }
-  if(v.type==="hotspots"){
-    const seen=new Set();
-    el.innerHTML=`<div class="scene"><svg viewBox="0 0 320 180">${val(v.svg)}${v.pts.map((p,i)=>`<g class="hot" data-i="${i}" tabindex="0" role="button" aria-label="${esc(p.t)}"><circle cx="${p.x}" cy="${p.y}" r="11"/><text x="${p.x}" y="${p.y+4}">${i+1}</text></g>`).join("")}</svg></div><p class="msg" id="hotT">Tocca i numeri gialli.</p><p id="hotD"></p><p class="small" id="hotN">Scoperti 0 su ${v.pts.length}</p>`;
+  if(v.type==="hotspots"||v.type==="photo"){
+    const seen=new Set();let H=180,bg=val(v.svg),pts=v.pts;
+    if(v.type==="photo"){const P=PHOTOS[v.img],[x0,y0,x1,y1]=P.box,k=320/(x1-x0);H=Math.round((y1-y0)*k);bg=`<image href="${P.src}" width="320" height="${H}" preserveAspectRatio="none"/>`;pts=v.pts.map(p=>({...p,x:Math.round((p.x-x0)*k),y:Math.round((p.y-y0)*k)}))}
+    v={...v,pts};
+    el.innerHTML=`<div class="scene"><svg viewBox="0 0 320 ${H}" role="img" aria-label="${esc(v.title)}">${bg}${v.pts.map((p,i)=>`<g class="hot" data-i="${i}" tabindex="0" role="button" aria-label="${esc(p.t)}"><circle cx="${p.x}" cy="${p.y}" r="${v.type==="photo"?9:11}"/><text x="${p.x}" y="${p.y+4}">${i+1}</text></g>`).join("")}</svg></div><p class="msg" id="hotT">Tocca i numeri gialli.</p><p id="hotD"></p><p class="small" id="hotN">Scoperti 0 su ${v.pts.length}</p>${v.d?`<p class="small">${esc(v.d)}</p>`:""}`;
     el.querySelectorAll(".hot").forEach(g=>{const f=()=>{const p=v.pts[+g.dataset.i];seen.add(g.dataset.i);g.classList.add("seen");el.querySelector("#hotT").textContent=(+g.dataset.i+1)+". "+p.t;el.querySelector("#hotD").textContent=p.d;el.querySelector("#hotN").textContent="Scoperti "+seen.size+" su "+v.pts.length;sound("snap")};g.onclick=f;g.onkeydown=e=>{if(e.key==="Enter")f()}});
   }
   if(v.type==="slope"){
@@ -334,7 +337,7 @@ function renderViz(v,el){
 function renderStop(){
   stopVoice();
   const i=st.cur,s=STOPS[i],got=st.done.includes(i);
-  const opts=shuffle(s.o.map((o,j)=>[o,j]));
+  const opts=shuffle(s.o.map((o,j)=>[o,j])),vz=s.viz?[].concat(s.viz):[];
   $("vGiro").innerHTML=`<div class="wrap">
     <p class="eyebrow">Tappa ${R[i]} di VIII</p>
     <h1>${esc(s.n)}</h1>
@@ -342,7 +345,7 @@ function renderStop(){
     <div class="row"><button class="main" id="say">Ascolta il racconto</button><button id="snd">Fai il suono</button></div>
     ${s.t.split("\n").map(p=>`<p>${esc(p)}</p>`).join("")}
     <div class="box fact"><h2>Occhio da esploratore</h2><p>${esc(s.f)}</p></div>
-    ${s.viz?`<div class="box"><p class="eyebrow">Laboratorio</p><h2>${esc(s.viz.title)}</h2><div id="viz" class="wrap"></div></div>`:""}
+    ${vz.map((v,j)=>`<div class="box"><p class="eyebrow">${v.type==="photo"?"Dal vero":"Laboratorio"}</p><h2>${esc(v.title)}</h2><div id="viz${j}" class="wrap viz"></div></div>`).join("")}
     <div class="box"><h2>La domanda difficile</h2><p>${esc(s.q)}</p>
       <div class="opts">${opts.map(([o,j])=>`<button data-j="${j}">${esc(o)}</button>`).join("")}</div>
       <p class="msg" id="qmsg">${got?"Figurina già conquistata.":""}</p></div>
@@ -354,7 +357,7 @@ function renderStop(){
   </div>`;
   $("say").onclick=e=>speak(i,e.currentTarget);
   $("snd").onclick=()=>sound(s.snd);
-  if(s.viz)renderViz(s.viz,$("viz"));
+  vz.forEach((v,j)=>renderViz(v,$("viz"+j)));
   $("vGiro").querySelectorAll(".opts button").forEach(b=>b.onclick=()=>{
     if(+b.dataset.j===s.a){b.className="right";$("qmsg").textContent="Esatto! Figurina "+R[i]+" conquistata.";sound("gong");
       if(!st.done.includes(i)){st.done.push(i);save();drawMap()}}
