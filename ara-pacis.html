@@ -79,6 +79,14 @@ nav button[aria-current="true"]{color:var(--ink);border-top-color:var(--sun)}
 .hot circle{fill:#E8B21E;stroke:#2B2100;stroke-width:2}
 .hot.seen circle{fill:#FFFFFF;fill-opacity:.6}
 .hot text{font-family:var(--display);font-size:12px;font-weight:800;text-anchor:middle;fill:#2B2100;pointer-events:none}
+#map .lbl{font-size:8px;text-anchor:middle;fill:var(--soft);paint-order:stroke;stroke:var(--card);stroke-width:3px}
+.thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.thumbs figure{margin:0;display:flex;flex-direction:column;gap:4px;min-width:0}
+.thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:2px solid var(--ink);display:block}
+.thumbs button{min-height:32px;padding:2px 4px;font-size:.8rem;border-width:1px}
+.filebtn{display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:1.05rem;font-weight:600;border-radius:14px;border:2px solid var(--ink);background:var(--card);color:var(--ink);padding:10px 14px;cursor:pointer;min-height:48px;text-align:center}
+.filebtn:focus-within{outline:3px solid var(--sun);outline-offset:2px}
+.field{width:100%;min-height:46px;border-radius:12px;border:2px solid var(--ink);background:var(--card);color:var(--ink);font:inherit;padding:8px 12px}
 .pal{display:flex;gap:8px;flex-wrap:wrap}
 .pal button{width:44px;height:44px;min-height:0;padding:0;border-radius:50%}
 .pal button.sel{outline:4px solid var(--sun);outline-offset:2px}
@@ -160,6 +168,7 @@ function sound(k){
     if(k==="falls")noise(0,3,2500,.35);
     if(k==="snip")[0,.25,.5,.75].forEach(t=>{tone(2600,t,.04,"square",.1,1800);tone(2000,t+.08,.04,"square",.1,2800)});
     if(k==="coin"){tone(2400,0,.25,"triangle",.2);tone(3200,.05,.3,"triangle",.15);noise(.35,.5,3000,.35)}
+    if(k==="bell"){tone(523,0,2.2,"sine",.3);tone(1046,0,1.4,"sine",.12);tone(659,.02,1.8,"triangle",.08)}
     if(k==="fanfare")[[392,0],[523,.18],[659,.36],[784,.54],[784,.9]].forEach(([f,t])=>tone(f,t,t>.5?.6:.16,"square",.09));
   }catch(e){}
 }
@@ -383,6 +392,37 @@ function speak(i,btn){
   voice.play().catch(()=>{btn.textContent="Audio non disponibile";voiceBtn=null});
 }
 
+/* ---------- foto ---------- */
+const REPO="RQ-lab/piccoli-esploratori-romani",SLUG=SITE.key.replace(/\d+$/,"");
+let fdb=null;
+const dbReady=new Promise(res=>{try{const r=indexedDB.open("piccoli-esploratori",1);r.onupgradeneeded=()=>r.result.createObjectStore("foto",{keyPath:"id",autoIncrement:true});r.onsuccess=()=>{fdb=r.result;res()};r.onerror=()=>res()}catch(e){res()}});
+const fotoAll=()=>new Promise(res=>{if(!fdb)return res([]);try{const q=fdb.transaction("foto").objectStore("foto").getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([])}catch(e){res([])}});
+const fotoTx=fn=>new Promise(res=>{try{const t=fdb.transaction("foto","readwrite");fn(t.objectStore("foto"));t.oncomplete=()=>res(true);t.onerror=()=>res(false)}catch(e){res(false)}});
+const fotoPut=rec=>fotoTx(o=>o.put(rec)),fotoDel=id=>fotoTx(o=>o.delete(id));
+function shrink(file){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
+  img.onload=()=>{const k=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?res(b):rej(new Error("vuota")),"image/jpeg",.85)};
+  img.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("non leggibile"))};img.src=u})}
+async function fotoList(el,stop){
+  await dbReady;if(!el||!el.isConnected)return;
+  const all=(await fotoAll()).filter(f=>f.site===SLUG&&(stop===null||f.stop===stop));
+  el.innerHTML=all.map(f=>`<figure><img alt="Foto della tappa ${R[f.stop]}" data-id="${f.id}"><button data-id="${f.id}">Elimina</button></figure>`).join("");
+  all.forEach(f=>{const im=el.querySelector(`img[data-id="${f.id}"]`);im.src=URL.createObjectURL(f.blob)});
+  el.querySelectorAll("button").forEach(b=>b.onclick=async()=>{if(b.dataset.sure){await fotoDel(+b.dataset.id);fotoList(el,stop)}else{b.dataset.sure="1";b.textContent="Confermi?"}});
+}
+const b64=blob=>new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result).split(",")[1]);fr.onerror=rej;fr.readAsDataURL(blob)});
+async function fotoUpload(tok,say){
+  const all=(await fotoAll()).filter(f=>!f.up);let ok=0;
+  if(!all.length){say("Non ci sono foto nuove da caricare.");return}
+  for(const f of all){
+    say("Carico la foto "+(ok+1)+" di "+all.length+"…");let r;
+    try{r=await fetch("https://api.github.com/repos/"+REPO+"/contents/foto/"+f.site+"/tappa"+(f.stop+1)+"-"+f.ts+".jpg",{method:"PUT",headers:{Authorization:"Bearer "+tok,Accept:"application/vnd.github+json"},body:JSON.stringify({message:"Foto: "+f.site+", tappa "+(f.stop+1),content:await b64(f.blob)})})}
+    catch(e){say("Caricate "+ok+" foto, poi la connessione si è interrotta. Riprova più tardi.");return}
+    if(r.ok||r.status===422){f.up=true;await fotoPut(f);ok++}
+    else{say(r.status===401?"La chiave non è valida o è scaduta.":r.status===403||r.status===404?"La chiave non ha il permesso di scrivere nel sito.":"Il sito ha risposto con l'errore "+r.status+". Caricate "+ok+" foto.");return}
+  }
+  say("Fatto: "+ok+" foto caricate sul sito, nella cartella foto.");
+}
+
 /* ---------- grafiche interattive ---------- */
 function renderViz(v,el){
   if(v.type==="compare"){
@@ -431,6 +471,8 @@ function renderStop(){
       <p><b>${esc(s.dq)}</b></p>
       <div class="row"><button id="dadShow">Scopri la risposta</button></div>
       <div id="dadA" class="wrap" hidden><p>${esc(s.da)}</p><p class="small">Com'è andata?</p><div class="row"><button id="dadY">Lo sapeva</button><button id="dadN">Non lo sapeva</button></div><p class="msg" id="dadMsg"></p></div></div>
+    <div class="box"><h2>Le tue foto di questa tappa</h2><p class="small">Scatta o scegli una foto: resta salvata su questo telefono e la ritrovi nell'Album.</p>
+      <label class="filebtn"><input type="file" accept="image/*" id="fotoIn" hidden>Aggiungi una foto</label><p class="msg" id="fotoMsg"></p><div class="thumbs" id="fotoList"></div></div>
     <div class="row">${i>0?'<button id="prev">Indietro</button>':""}<button id="next" class="main">${i<7?"Prossima tappa":"Vai all'album"}</button></div>
   </div>`;
   $("say").onclick=e=>speak(i,e.currentTarget);
@@ -445,6 +487,11 @@ function renderStop(){
   $("dadShow").onclick=()=>{$("dadA").hidden=false;$("dadShow").hidden=true;dadMsg()};
   $("dadY").onclick=()=>{st.dad[i]=true;save();dadMsg()};
   $("dadN").onclick=()=>{st.dad[i]=false;save();dadMsg()};
+  $("fotoIn").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+    if(!fdb){$("fotoMsg").textContent="Su questo telefono non riesco a salvare le foto.";return}
+    try{$("fotoMsg").textContent="Salvo la foto…";const blob=await shrink(f);await fotoPut({site:SLUG,stop:i,ts:Date.now(),blob,up:false});$("fotoMsg").textContent="Foto salvata.";fotoList($("fotoList"),i)}
+    catch(err){$("fotoMsg").textContent="Non riesco a leggere questa immagine."}};
+  fotoList($("fotoList"),i);
   if($("prev"))$("prev").onclick=()=>go(i-1);
   $("next").onclick=()=>i<7?go(i+1):show("Album");
   document.querySelector("main").scrollTop=0;
@@ -524,9 +571,20 @@ function renderAlbum(){
     <div class="album">${STOPS.map((s,i)=>`<div class="stk ${st.done.includes(i)?"got":""}">${R[i]}<span>${esc(s.short)}</span></div>`).join("")}</div>
     <div class="box"><h2>Medaglie delle sfide</h2><p>${st.med.length?GAMES.filter(g=>st.med.includes(g[0])).map(g=>g[1]).join(", "):"Ancora nessuna: le trovi nella scheda Sfide."}</p></div>
     <div class="box dad"><h2>La sfida con papà</h2><p>${asked?"Domande fatte: "+asked+" su 8. Papà ne sapeva "+knew+".":"Non hai ancora fatto domande a papà: le trovi in fondo a ogni tappa."}</p></div>
+    <div class="box"><h2>Le tue foto</h2><p id="fotoCount" class="small">Conto le foto…</p><div class="thumbs" id="fotoAlbum"></div>
+      ${HOME?`<p class="small">Puoi caricare le foto sul sito, per usarle nella prossima versione dei tour. Attenzione: il sito è pubblico, quindi le foto caricate sono visibili a chiunque. Non caricare foto con persone riconoscibili.</p>
+      <label class="small" for="ghTok">Chiave di caricamento (la crei tu su GitHub, e resta solo su questo telefono)</label><input class="field" type="password" id="ghTok" autocomplete="off" placeholder="Incolla qui la chiave">
+      <div class="row"><button id="fotoUp">Carica le foto sul sito</button></div><p class="msg" id="fotoUpMsg"></p>`:""}</div>
     ${all?`<div class="box diploma"><p class="eyebrow">${gold?"Diploma d'oro":"Diploma"}</p><h2>${esc(SITE.diploma)}</h2><p>${esc(SITE.diplomaText)}${gold?" E hai vinto tutte le sfide!":""}</p></div>`:""}
     ${HOME?'<p><a href="./" style="color:inherit;font-weight:700">Torna a tutti i tour di Roma</a></p>':""}
     <div class="row"><button id="reset">Ricomincia da capo</button></div></div>`;
+  fotoList($("fotoAlbum"),null);
+  dbReady.then(fotoAll).then(a=>{if($("fotoCount"))$("fotoCount").textContent=a.length?"Su questo telefono ci sono "+a.length+" foto in tutto, "+a.filter(f=>f.site===SLUG).length+" di questo tour. Da caricare: "+a.filter(f=>!f.up).length+".":"Non hai ancora foto: aggiungile in fondo a ogni tappa."});
+  if($("fotoUp")){let tk="";try{tk=localStorage.getItem("pe-chiave")||""}catch(e){}$("ghTok").value=tk;
+    $("fotoUp").onclick=async()=>{const t=$("ghTok").value.trim(),say=m=>{if($("fotoUpMsg"))$("fotoUpMsg").textContent=m};
+      if(!t){say("Prima incolla la chiave di caricamento.");return}
+      try{localStorage.setItem("pe-chiave",t)}catch(e){}
+      $("fotoUp").disabled=true;await fotoUpload(t,say);if($("fotoUp"))$("fotoUp").disabled=false}}
   $("reset").onclick=()=>{st={cur:0,done:[],med:[],dad:{}};save();renderStop();drawMap();renderAlbum()};
 }
 
